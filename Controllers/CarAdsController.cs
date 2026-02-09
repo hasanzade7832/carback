@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace CarAds.Controllers
 {
@@ -38,8 +37,14 @@ namespace CarAds.Controllers
                 .Select(x => new
                 {
                     x.Id,
+                    x.Type,
                     x.Title,
+                    x.Year,
+                    x.Color,
+                    x.MileageKm,
                     x.Price,
+                    x.Gearbox,
+                    x.ChassisNumber,
                     x.CreatedAt,
                     x.UserId
                 })
@@ -50,6 +55,10 @@ namespace CarAds.Controllers
 
         // =====================================
         // تأیید آگهی
+        // + ✅ Realtime برای:
+        //   - صفحه اصلی (All) => CarAdApproved
+        //   - پنل ادمین‌ها (Admins) => CarAdApprovedForAdmins
+        //   - پنل صاحب آگهی (User:{id}) => CarAdStatusChanged
         // =====================================
         [HttpPost("{id}/approve")]
         public async Task<IActionResult> ApproveAd(int id)
@@ -65,9 +74,7 @@ namespace CarAds.Controllers
                 return BadRequest("این آگهی قبلاً بررسی شده است");
 
             // ✅ Admin Id از JWT
-            var adminId = int.Parse(
-                User.FindFirst("userId")!.Value
-            );
+            var adminId = int.Parse(User.FindFirst("userId")!.Value);
 
             ad.Status = CarAdStatus.Approved;
             ad.ApprovedAt = DateTime.UtcNow;
@@ -75,15 +82,44 @@ namespace CarAds.Controllers
 
             await _context.SaveChangesAsync();
 
-            // ✅ SignalR فقط برای آگهی تأییدشده
+            // 1) ✅ برای صفحه اصلی (عمومی) - همه ببینن
             await _hubContext.Clients.All.SendAsync(
                 "CarAdApproved",
                 new
                 {
                     ad.Id,
+                    ad.Type,
                     ad.Title,
+                    ad.Year,
+                    ad.Color,
+                    ad.MileageKm,
                     ad.Price,
+                    ad.Gearbox,
                     ad.CreatedAt
+                }
+            );
+
+            // 2) ✅ برای پنل ادمین‌ها - بدون رفرش از لیست Pending حذف/آپدیت کنن
+            await _hubContext.Clients.Group("Admins").SendAsync(
+                "CarAdApprovedForAdmins",
+                new
+                {
+                    ad.Id,
+                    status = ad.Status.ToString(),
+                    ad.ApprovedAt,
+                    ad.ApprovedByAdminId
+                }
+            );
+
+            // 3) ✅ برای صاحب آگهی - وضعیت آگهی در پنل کاربر لحظه‌ای آپدیت شود
+            await _hubContext.Clients.Group($"User:{ad.UserId}").SendAsync(
+                "CarAdStatusChanged",
+                new
+                {
+                    adId = ad.Id,
+                    status = ad.Status.ToString(),
+                    approvedAt = ad.ApprovedAt,
+                    rejectedAt = ad.RejectedAt
                 }
             );
 
@@ -92,6 +128,9 @@ namespace CarAds.Controllers
 
         // =====================================
         // رد آگهی
+        // + ✅ Realtime برای:
+        //   - پنل ادمین‌ها (Admins) => CarAdRejectedForAdmins
+        //   - پنل صاحب آگهی (User:{id}) => CarAdStatusChanged
         // =====================================
         [HttpPost("{id}/reject")]
         public async Task<IActionResult> RejectAd(int id)
@@ -110,6 +149,29 @@ namespace CarAds.Controllers
             ad.RejectedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            // 1) ✅ برای پنل ادمین‌ها - از لیست pending حذف/آپدیت
+            await _hubContext.Clients.Group("Admins").SendAsync(
+                "CarAdRejectedForAdmins",
+                new
+                {
+                    ad.Id,
+                    status = ad.Status.ToString(),
+                    ad.RejectedAt
+                }
+            );
+
+            // 2) ✅ برای صاحب آگهی - وضعیت آگهی لحظه‌ای آپدیت
+            await _hubContext.Clients.Group($"User:{ad.UserId}").SendAsync(
+                "CarAdStatusChanged",
+                new
+                {
+                    adId = ad.Id,
+                    status = ad.Status.ToString(),
+                    approvedAt = ad.ApprovedAt,
+                    rejectedAt = ad.RejectedAt
+                }
+            );
 
             return Ok("آگهی رد شد");
         }

@@ -1,10 +1,12 @@
 ﻿using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using CarAds.Data;
 using CarAds.Hubs;
+using CarAds.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,9 @@ builder.Services.Configure<FormOptions>(options =>
 });
 
 builder.Services.AddSignalR();
+
+// ✅ Password Hasher
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
 var jwt = builder.Configuration.GetSection("Jwt");
 var jwtKey = Encoding.UTF8.GetBytes(jwt["Key"]!);
@@ -78,6 +83,9 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// ✅ Seed سوپرادمین (و اجرای Migration)
+await DbSeeder.SeedAsync(app.Services);
 
 if (app.Environment.IsDevelopment())
 {

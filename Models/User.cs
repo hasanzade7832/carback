@@ -6,17 +6,21 @@ namespace CarAds.Models
     {
         public int Id { get; set; }
 
+        // ✅ NEW
+        public string FirstName { get; set; } = null!;
+        public string LastName { get; set; } = null!;
+
         public string Username { get; set; } = null!;
         public string Phone { get; set; } = null!;
 
-        // ✅ استفاده شده در AuthController
+        // ✅ اجباری
         public string Email { get; set; } = null!;
 
+        // ✅ برای لاگین
         public string PasswordHash { get; set; } = string.Empty;
 
         public UserRole Role { get; set; } = UserRole.User;
 
-        // ✅ استفاده شده در Register
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // ✅ Navigation

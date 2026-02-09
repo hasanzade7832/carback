@@ -1,6 +1,7 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -18,15 +19,18 @@ namespace CarAds.Controllers
         private readonly AppDbContext _context;
         private readonly IWebHostEnvironment _env;
         private readonly IConfiguration _configuration;
+        private readonly IPasswordHasher<User> _passwordHasher;
 
         public AuthController(
             AppDbContext context,
             IWebHostEnvironment env,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IPasswordHasher<User> passwordHasher)
         {
             _context = context;
             _env = env;
             _configuration = configuration;
+            _passwordHasher = passwordHasher;
         }
 
         // =========================
@@ -38,6 +42,12 @@ namespace CarAds.Controllers
         {
             if (_context.Users.Any(x => x.Phone == dto.Phone))
                 return BadRequest("شماره تلفن تکراری است");
+
+            if (_context.Users.Any(x => x.Username == dto.Username))
+                return BadRequest("نام کاربری تکراری است");
+
+            if (_context.Users.Any(x => x.Email == dto.Email))
+                return BadRequest("ایمیل تکراری است");
 
             var allowedMimeTypes = new[]
             {
@@ -69,12 +79,17 @@ namespace CarAds.Controllers
 
             var user = new User
             {
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
                 Username = dto.Username,
                 Phone = dto.Phone,
                 Email = dto.Email,
                 Role = UserRole.User,
                 CreatedAt = DateTime.UtcNow
             };
+
+            // ✅ Hash Password
+            user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
@@ -111,6 +126,16 @@ namespace CarAds.Controllers
             if (user == null)
                 return Unauthorized("کاربر یافت نشد");
 
+            // ✅ Verify Password
+            var verify = _passwordHasher.VerifyHashedPassword(
+                user,
+                user.PasswordHash,
+                dto.Password
+            );
+
+            if (verify == PasswordVerificationResult.Failed)
+                return Unauthorized("رمز عبور اشتباه است");
+
             if (user.License == null)
                 return Unauthorized("مجوزی برای این کاربر ثبت نشده");
 
@@ -122,7 +147,8 @@ namespace CarAds.Controllers
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim("userId", user.Id.ToString()),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
-                new Claim("licenseStatus", user.License.Status.ToString())
+                new Claim("licenseStatus", user.License.Status.ToString()),
+                new Claim("username", user.Username)
             };
 
             var jwtSettings = _configuration.GetSection("Jwt");
